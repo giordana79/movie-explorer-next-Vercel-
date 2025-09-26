@@ -13,9 +13,11 @@ creare la versione “deployabile”:
 
 - npm run build
 - npm run start
-  Questo genera il codice ottimizzato pronto per il deploy.
+  
+Questo genera il codice ottimizzato pronto per il deploy.
 
 git remote add origin https://github.com/giordana79/movie-explorer-next-Vercel-.git
 
 **Preview URL pubblica:**
 https://movie-explorer-next-vercel.vercel.app/
+
