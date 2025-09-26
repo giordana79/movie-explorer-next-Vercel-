@@ -1,95 +1,176 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
+// Client component: può usare hook (useState/useEffect), localStorage, eventi e window/document
 
-export default function Home() {
+import { useEffect, useState } from "react";
+
+import ResultCard from "./components/ResultCard";
+import DetailModal from "./components/DetailModal";
+
+import { searchTitles, getTitleById } from "./lib/tvmaze";
+// Adapter TVMaze: incapsula le chiamate API e normalizza i dati
+
+import useDebounce from "./hooks/useDebounce";
+// Hook custom: restituisce un valore "stabilizzato" per evitare troppe chiamate API
+
+export default function HomePage() {
+  // Input ricerca
+  const [query, setQuery] = useState("");
+
+  // Debounce della query (400ms)
+  const debouncedQuery = useDebounce(query, 400);
+
+  // Risultati della ricerca
+  const [results, setResults] = useState([]);
+
+  // Stati UI
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Paginazione client-side
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+
+  // Dati del dettaglio selezionato
+  const [selected, setSelected] = useState(null);
+
+  // Preferiti (array di id salvati in localStorage)
+  const [favorites, setFavorites] = useState([]);
+
+  // Carica preferiti al mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("favorites");
+      if (raw) setFavorites(JSON.parse(raw));
+    } catch (e) {
+      console.warn("Errore localStorage:", e);
+    }
+  }, []);
+
+  // Salva preferiti quando cambiano
+  useEffect(() => {
+    try {
+      localStorage.setItem("favorites", JSON.stringify(favorites));
+    } catch (e) {
+      console.warn("Errore salvataggio preferiti:", e);
+    }
+  }, [favorites]);
+
+  // Esegui ricerca quando cambia la query debounced
+  useEffect(() => {
+    if (!debouncedQuery.trim()) {
+      setResults([]);
+      setError(null);
+      setPage(1);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    searchTitles(debouncedQuery)
+      .then((items) => {
+        setResults(items);
+        setPage(1);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [debouncedQuery]);
+
+  // Paginazione client-side
+  const start = (page - 1) * PAGE_SIZE;
+  const pagedResults = results.slice(start, start + PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
+
+  // Aggiungi/rimuovi preferiti
+  const toggleFavorite = (id) => {
+    setFavorites((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  // Apri dettagli: fetch del dettaglio per id e apri la modale
+  const openDetail = async (id) => {
+    setLoading(true);
+    try {
+      const detail = await getTitleById(id);
+      setSelected(detail);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Render
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>src/app/page.js</code>.
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    <section className="container">
+      {/* Barra ricerca */}
+      <input
+        className="search"
+        placeholder="Cerca un titolo… (es. matrix)"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        aria-label="Cerca titolo"
+      />
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+      {/* Messaggi stato */}
+      {loading && <p className="hint">Caricamento…</p>}
+      {error && <p className="error">Errore: {error}</p>}
+      {!loading && !error && debouncedQuery && results.length === 0 && (
+        <p className="hint">Nessun risultato per “{debouncedQuery}”.</p>
+      )}
+
+      {/* Griglia risultati */}
+      <div className="grid">
+        {pagedResults.map((item) => (
+          <ResultCard
+            key={item.id}
+            title={item.title}
+            year={item.year}
+            poster={item.poster}
+            rating={item.rating}
+            isFavorite={favorites.includes(item.id)}
+            onToggleFavorite={() => toggleFavorite(item.id)}
+            onClick={() => openDetail(item.id)}
+          />
+        ))}
+      </div>
+
+      {/* Paginazione */}
+      {results.length > PAGE_SIZE && (
+        <div className="pagination" role="navigation" aria-label="Paginazione">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            aria-label="Pagina precedente"
+            title="Pagina precedente"
           >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
+            ◀︎
+          </button>
+
+          <span>
+            Pagina {page} di {totalPages}
+          </span>
+
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+            aria-label="Pagina successiva"
+            title="Pagina successiva"
           >
-            Read our docs
-          </a>
+            ▶︎
+          </button>
         </div>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      )}
+
+      {/* Modale dettaglio */}
+      {selected && (
+        <DetailModal
+          data={selected}
+          onClose={() => setSelected(null)}
+          onToggleFavorite={() => toggleFavorite(selected.id)}
+          isFavorite={favorites.includes(selected.id)}
+        />
+      )}
+    </section>
   );
 }
+
